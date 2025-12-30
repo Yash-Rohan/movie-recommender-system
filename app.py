@@ -3,23 +3,17 @@ import streamlit as st
 import pickle
 import pandas as pd
 
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 # -------------------- PAGE STYLE --------------------
 st.markdown(
     """
     <style>
-    .stApp {
-        background-color: #0b1d3a;
-    }
-    h1 {
-        color: #ffffff !important;
-        font-weight: 700;
-    }
-    h2, h3, h4, h5, h6, p, label, span {
-        color: #e6e6e6 !important;
-    }
-    .stSelectbox div[data-baseweb="select"] > div {
-        color: black;
-    }
+    .stApp { background-color: #0b1d3a; }
+    h1 { color: #ffffff !important; font-weight: 700; }
+    h2, h3, h4, h5, h6, p, label, span { color: #e6e6e6 !important; }
+    .stSelectbox div[data-baseweb="select"] > div { color: black; }
     .stButton > button {
         background-color: #1f3c88;
         color: white;
@@ -31,7 +25,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# -------------------- ROBUST POSTER FETCH --------------------
+# -------------------- POSTER FETCH --------------------
 @st.cache_data(show_spinner=False)
 def fetch_poster(movie_title):
     try:
@@ -41,12 +35,10 @@ def fetch_poster(movie_title):
             "query": movie_title,
             "include_adult": False
         }
-
         response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
         data = response.json()
 
-        # Find first available poster
         for result in data.get("results", []):
             if result.get("poster_path"):
                 return "https://image.tmdb.org/t/p/w500/" + result["poster_path"]
@@ -56,11 +48,22 @@ def fetch_poster(movie_title):
     except:
         return "https://via.placeholder.com/300x450?text=API+Error"
 
-# -------------------- LOAD DATA --------------------
-movies_dict = pickle.load(open("movie_dict.pkl", "rb"))
-movies = pd.DataFrame(movies_dict)
+# -------------------- LOAD MOVIES --------------------
+@st.cache_resource
+def load_movies():
+    movies_dict = pickle.load(open("movie_dict.pkl", "rb"))
+    return pd.DataFrame(movies_dict)
 
-similarity = pickle.load(open("similarity.pkl", "rb"))
+movies = load_movies()
+
+# -------------------- COMPUTE SIMILARITY --------------------
+@st.cache_resource
+def compute_similarity(movies):
+    cv = CountVectorizer(max_features=5000, stop_words="english")
+    vectors = cv.fit_transform(movies["tags"]).toarray()
+    return cosine_similarity(vectors)
+
+similarity = compute_similarity(movies)
 
 # -------------------- RECOMMENDER --------------------
 def recommend(movie):
@@ -95,14 +98,9 @@ st.write("You selected:", option)
 
 if st.button("Recommend"):
     names, posters = recommend(option)
+    cols = st.columns(5)
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    for col, name, poster in zip(
-        [col1, col2, col3, col4, col5],
-        names,
-        posters
-    ):
+    for col, name, poster in zip(cols, names, posters):
         with col:
             st.text(name)
             st.image(poster)
